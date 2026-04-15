@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RuleEyes Relay Runtime - 技术架构介绍</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0a0f;
+            color: #e2e8f0;
+            overflow: hidden;
+        }
+        
+        .slide {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transform: translateX(100px);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+            padding: 2rem;
+        }
+        
+        .slide.active {
+            opacity: 1;
+            transform: translateX(0);
+            pointer-events: all;
+        }
+        
+        .slide.prev {
+            opacity: 0;
+            transform: translateX(-100px);
+        }
+        
+        /* 背景网格效果 */
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        /* 光晕效果 */
+        .glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .glow-1 {
+            background: #6366f1;
+            top: -200px;
+            right: -200px;
+        }
+        
+        .glow-2 {
+            background: #ec4899;
+            bottom: -200px;
+            left: -200px;
+        }
+        
+        .glow-3 {
+            background: #06b6d4;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        /* 代码字体 */
+        .code {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        /* 卡片样式 */
+        .tech-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .tech-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(99, 102, 241, 0.5);
+            transform: translateY(-2px);
+        }
+        
+        /* 进度条 */
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #6366f1, #ec4899);
+            transition: width 0.3s ease;
+            z-index: 100;
+        }
+        
+        /* 导航按钮 */
+        .nav-btn {
+            position: fixed;
+            bottom: 2rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .nav-btn:hover {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+        
+        .nav-prev {
+            left: 2rem;
+        }
+        
+        .nav-next {
+            right: 2rem;
+        }
+        
+        /* 页码指示器 */
+        .page-indicator {
+            position: fixed;
+            bottom: 2.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 0.5rem;
+            z-index: 100;
+        }
+        
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .dot.active {
+            background: #6366f1;
+            width: 24px;
+            border-radius: 4px;
+        }
+        
+        /* 动画 */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        .animate-pulse-slow {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        /* 架构图连接线 */
+        .connector {
+            position: absolute;
+            background: linear-gradient(90deg, #6366f1, #ec4899);
+            height: 2px;
+            opacity: 0.3;
+        }
+        
+        /* 标签样式 */
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            color: #818cf8;
+        }
+        
+        /* 特性列表 */
+        .feature-item {
+            display: flex;
+            align-items: start;
+            gap: 0.75rem;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .feature-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: 0.5rem;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- 背景装饰 -->
+    <div class="bg-grid"></div>
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <div class="glow glow-3"></div>
+    
+    <!-- 进度条 -->
+    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+    
+    <!-- 幻灯片 1: 封面 -->
+    <div class="slide active" data-index="0">
+        <div class="text-center max-w-5xl z-10">
+            <div class="mb-6 inline-block">
+                <span class="tag mb-4 animate-pulse-slow">RuleEyes Relay Runtime · 技术架构介绍</span>
+            </div>
+            <h1 class="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                面向 Android App 的自治审计运行时
+            </h1>
+            <p class="text-xl md:text-2xl text-gray-400 mb-8 font-light leading-relaxed">
+                用 <span class="text-indigo-300 code">Relay + ADB + Frida</span> 把页面观察、动作规划、运行证据、失败重放串成一个可复盘的自动化审计闭环
+            </p>
+            <div class="flex flex-wrap justify-center gap-4 text-sm text-gray-500 code">
+                <span class="px-4 py-2 bg-white/5 rounded-full border border-white/10">Node.js / TypeScript</span>
+                <span class="px-4 py-2 bg-white/5 rounded-full border border-white/10">ADB</span>
+                <span class="px-4 py-2 bg-white/5 rounded-full border border-white/10">Frida</span>
+                <span class="px-4 py-2 bg-white/5 rounded-full border border-white/10">Anthropic / OpenAI Relay</span>
+                <span class="px-4 py-2 bg-white/5 rounded-full border border-white/10">SSE Web UI</span>
+            </div>
+            <div class="mt-12 text-gray-600 text-sm">
+                <p>当前版本聚焦：Android 动态审计、自治运行、证据链留存、失败重放</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 2: 项目定位 -->
+    <div class="slide" data-index="1">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-12 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">项目定位：不是单点工具，而是自治运行时</span>
+            </h2>
+            
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="tech-card rounded-2xl p-8">
+                    <h3 class="text-xl font-semibold mb-6 text-red-400 flex items-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        为什么传统方式不够
+                    </h3>
+                    <ul class="space-y-4 text-gray-300">
+                        <li class="flex items-start gap-3"><span class="text-red-400 mt-1">•</span><span>静态扫描看得到声明和代码，但看不到真实页面操作后触发的运行时行为。</span></li>
+                        <li class="flex items-start gap-3"><span class="text-red-400 mt-1">•</span><span>人工测试能发现问题，但成本高、覆盖不稳定、结果难复现。</span></li>
+                        <li class="flex items-start gap-3"><span class="text-red-400 mt-1">•</span><span>单独用大模型会“看图会说”，但不一定能稳定驱动真实安卓设备完成闭环。</span></li>
+                        <li class="flex items-start gap-3"><span class="text-red-400 mt-1">•</span><span>单独用 Hook 也不够，因为看不到“它是在什么页面、什么操作后发生的”。</span></li>
+                    </ul>
+                </div>
+                
+                <div class="tech-card rounded-2xl p-8 border-indigo-500/30">
+                    <h3 class="text-xl font-semibold mb-6 text-indigo-400 flex items-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        RuleEyes 的工程解法
+                    </h3>
+                    <ul class="space-y-4 text-gray-300">
+                        <li class="flex items-start gap-3"><span class="text-indigo-400 mt-1">✓</span><span><strong>本地观察</strong>：截图、UI dump、manifest、Frida 事件一起采集。</span></li>
+                        <li class="flex items-start gap-3"><span class="text-indigo-400 mt-1">✓</span><span><strong>远端规划</strong>：把多模态观察交给 Relay，让模型返回下一步结构化动作。</span></li>
+                        <li class="flex items-start gap-3"><span class="text-indigo-400 mt-1">✓</span><span><strong>本地执行</strong>：由 ADB / Frida 执行动作，而不是把执行权交给云端黑盒。</span></li>
+                        <li class="flex items-start gap-3"><span class="text-indigo-400 mt-1">✓</span><span><strong>证据落盘</strong>：请求、响应、截图、事件、诊断文件统一保存，可追责、可回放。</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 3: 项目核心难点 -->
+    <div class="slide" data-index="2">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-4 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">项目核心难点</span>
+            </h2>
+            <p class="text-center text-gray-400 mb-10 text-lg">
+                难点不在“单点能力”，而在于把 <span class="text-indigo-300 code">Relay 规划</span>、<span class="text-purple-300 code">ADB/截图/UI dump</span>、<span class="text-pink-300 code">Frida 证据</span> 串成可复现的自治闭环。
+            </p>
+
+            <div class="grid md:grid-cols-2 gap-6 mb-8">
+                <div class="tech-card rounded-2xl p-7">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold">多源观测要对齐</h3>
+                            <p class="text-sm text-gray-500 code">ObservationService + FridaEvidenceService</p>
+                        </div>
+                    </div>
+                    <ul class="space-y-3 text-gray-300 text-sm leading-6">
+                        <li>• 截图、UI dump、前台 Activity、Frida 事件来自不同通道，时间粒度和稳定性不一致。</li>
+                        <li>• 单靠截图看不见后台敏感调用，单靠 Hook 又不知道调用发生在哪个页面。</li>
+                        <li>• 必须把“页面状态 + 用户动作 + 后台行为”绑定成同一步证据链。</li>
+                    </ul>
+                </div>
+
+                <div class="tech-card rounded-2xl p-7">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center text-purple-400">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold">规划必须可执行</h3>
+                            <p class="text-sm text-gray-500 code">PlannerService + ExecutionService</p>
+                        </div>
+                    </div>
+                    <ul class="space-y-3 text-gray-300 text-sm leading-6">
+                        <li>• 大模型擅长理解页面，但不天然保证输出动作一定能在安卓设备上稳定执行。</li>
+                        <li>• 需要把 Relay 返回约束成结构化 toolCalls，并经本地校验器过滤后再执行。</li>
+                        <li>• 还要防止“过早结束”、误判已覆盖、以及重复无效动作循环。</li>
+                    </ul>
+                </div>
+
+                <div class="tech-card rounded-2xl p-7">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-12 h-12 rounded-xl bg-pink-500/20 flex items-center justify-center text-pink-400">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.866-3.582 7-8 7 0-3.866 3.582-7 8-7zm0 0V9a4 4 0 118 0v2m-8 0h8m0 0c0 3.866-3.582 7-8 7v-7z"/></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold">外部 Relay 不稳定</h3>
+                            <p class="text-sm text-gray-500 code">RelayProvider + relay:replay</p>
+                        </div>
+                    </div>
+                    <ul class="space-y-3 text-gray-300 text-sm leading-6">
+                        <li>• 真实运行依赖第三方 API Relay，可能出现 upstream error、流式中断、额度异常。</li>
+                        <li>• 健康检查通过，不代表“带截图、长上下文、流式输出”的真实规划请求一定成功。</li>
+                        <li>• 所以系统必须保存 raw request / response，并支持失败重放与诊断。</li>
+                    </ul>
+                </div>
+
+                <div class="tech-card rounded-2xl p-7">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4V7M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold">闭环结果必须可复盘</h3>
+                            <p class="text-sm text-gray-500 code">TranscriptService + Web UI + SSE</p>
+                        </div>
+                    </div>
+                    <ul class="space-y-3 text-gray-300 text-sm leading-6">
+                        <li>• 这不是一次性 demo，而是要让每一步为什么点、点后看到什么、后台发生什么都能回放。</li>
+                        <li>• 因此需要 transcript、诊断文件、截图历史、实时事件流统一落盘并前端可视化。</li>
+                        <li>• 只有这样，结果才能用于审计、自证和后续整改闭环。</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="tech-card rounded-xl p-6 border-indigo-500/20">
+                <div class="text-center text-sm uppercase tracking-wider text-gray-500 mb-4">一句话总结</div>
+                <div class="grid md:grid-cols-5 gap-3 text-center code text-sm">
+                    <div class="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-indigo-300">Observe</div>
+                    <div class="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-purple-300">Plan</div>
+                    <div class="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-pink-300">Execute</div>
+                    <div class="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-blue-300">Evidence</div>
+                    <div class="px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-green-300">Replay</div>
+                </div>
+                <p class="text-center text-gray-400 mt-5 leading-7">
+                    这个项目真正难的是：把大模型的“会看会想”，转成安卓设备上的“能跑能证伪能复盘”。
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 4: 真实运行链路 -->
+    <div class="slide" data-index="3">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-12 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">真实运行链路</span>
+            </h2>
+            
+            <div class="tech-card rounded-2xl p-8 mb-8">
+                <div class="grid md:grid-cols-5 gap-4 text-center code text-sm">
+                    <div class="p-5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                        <div class="text-indigo-300 font-semibold mb-2">CLI / Web UI</div>
+                        <div class="text-gray-400">src/index.ts<br/>WebUiServer</div>
+                    </div>
+                    <div class="p-5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                        <div class="text-purple-300 font-semibold mb-2">Service Container</div>
+                        <div class="text-gray-400">createServiceContainer()</div>
+                    </div>
+                    <div class="p-5 rounded-xl bg-pink-500/10 border border-pink-500/20">
+                        <div class="text-pink-300 font-semibold mb-2">Autonomous Run</div>
+                        <div class="text-gray-400">AutonomousAuditService</div>
+                    </div>
+                    <div class="p-5 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                        <div class="text-blue-300 font-semibold mb-2">Artifacts</div>
+                        <div class="text-gray-400">screenshots / transcripts / diagnostics</div>
+                    </div>
+                    <div class="p-5 rounded-xl bg-green-500/10 border border-green-500/20">
+                        <div class="text-green-300 font-semibold mb-2">SSE / Replay</div>
+                        <div class="text-gray-400">实时面板 / relay:replay</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-6">
+                <div class="tech-card rounded-2xl p-7">
+                    <div class="tag mb-4">Step 1</div>
+                    <h3 class="text-2xl font-bold mb-3 text-indigo-400">Observe</h3>
+                    <p class="text-gray-400 mb-4">本地采集当前设备状态，尽量让模型看到“足够真实”的页面上下文。</p>
+                    <ul class="space-y-3 text-sm text-gray-300">
+                        <li>• screenshot</li>
+                        <li>• UI dump</li>
+                        <li>• top activity</li>
+                        <li>• manifest</li>
+                        <li>• Frida recent events</li>
+                    </ul>
+                </div>
+
+                <div class="tech-card rounded-2xl p-7">
+                    <div class="tag mb-4">Step 2</div>
+                    <h3 class="text-2xl font-bold mb-3 text-purple-400">Plan</h3>
+                    <p class="text-gray-400 mb-4">把观察结果发给 Relay，让模型返回结构化 toolCalls，而不是自然语言建议。</p>
+                    <ul class="space-y-3 text-sm text-gray-300">
+                        <li>• 多轮 history 进入上下文</li>
+                        <li>• 图片一并送入模型</li>
+                        <li>• 约束输出为 JSON toolCalls</li>
+                        <li>• 支持流式事件回传前端</li>
+                    </ul>
+                </div>
+
+                <div class="tech-card rounded-2xl p-7">
+                    <div class="tag mb-4">Step 3</div>
+                    <h3 class="text-2xl font-bold mb-3 text-pink-400">Execute</h3>
+                    <p class="text-gray-400 mb-4">本地校验并执行动作，再重新观察，进入下一轮，直到满足覆盖要求或失败退出。</p>
+                    <ul class="space-y-3 text-sm text-gray-300">
+                        <li>• tap / swipe / input / keyevent</li>
+                        <li>• Frida session 管理</li>
+                        <li>• after-action observation</li>
+                        <li>• transcript / raw payload 落盘</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 5: 关键技术模块 -->
+    <div class="slide" data-index="4">
+        <div class="max-w-6xl w-full z-10">
+            <div class="grid md:grid-cols-2 gap-12 items-center">
+                <div class="order-2 md:order-1">
+                    <div class="tech-card rounded-2xl p-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <h4 class="text-lg font-semibold text-indigo-400">Service Container 组成</h4>
+                            <span class="text-xs code text-gray-500">src/bootstrap.ts</span>
+                        </div>
+                        
+                        <div class="space-y-5 text-sm text-gray-300">
+                            <div class="pb-4 border-b border-white/10">
+                                <div class="font-semibold text-indigo-300 mb-1">Device / Execution</div>
+                                <div class="text-gray-500">AdbClientAdapter, DeviceService, AppLaunchService, ExecutionService</div>
+                            </div>
+                            <div class="pb-4 border-b border-white/10">
+                                <div class="font-semibold text-purple-300 mb-1">Observation / Evidence</div>
+                                <div class="text-gray-500">ScreenCaptureService, ObservationService, FridaEvidenceService, ManifestService</div>
+                            </div>
+                            <div class="pb-4 border-b border-white/10">
+                                <div class="font-semibold text-pink-300 mb-1">Planning / Relay</div>
+                                <div class="text-gray-500">RelayProviderFactory, PlannerService, stream callback</div>
+                            </div>
+                            <div>
+                                <div class="font-semibold text-blue-300 mb-1">Transcript / UI</div>
+                                <div class="text-gray-500">ArtifactService, TranscriptService, WebUiServer, SSE stream</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="order-1 md:order-2">
+                    <div class="tag mb-4">关键模块</div>
+                    <h2 class="text-4xl font-bold mb-6">工程拆分方式</h2>
+                    <p class="text-gray-400 mb-6 text-lg leading-relaxed">
+                        项目不是把所有能力堆进一个 Agent，而是明确分成 <span class="code text-indigo-300">本地执行层</span>、<span class="code text-purple-300">远端规划层</span>、<span class="code text-pink-300">证据与诊断层</span>。
+                    </p>
+                    
+                    <div class="space-y-4">
+                        <div class="feature-item">
+                            <div class="feature-icon text-indigo-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold mb-1">本地可控</h4>
+                                <p class="text-sm text-gray-500">所有设备动作与 Frida 行为都由本地服务执行，不依赖云端黑盒自动化。</p>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-item">
+                            <div class="feature-icon text-purple-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold mb-1">模型只负责规划</h4>
+                                <p class="text-sm text-gray-500">模型负责理解和下一步决策，执行权限仍然收口在本地动作集合中。</p>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-item">
+                            <div class="feature-icon text-pink-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold mb-1">诊断独立可复查</h4>
+                                <p class="text-sm text-gray-500">请求、响应、结构化输出、截图和 UTF-8 检查都能单独落盘，不依赖终端肉眼判断。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 6: 可观测与可复盘 -->
+    <div class="slide" data-index="5">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-12 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">可观测与可复盘是核心交付物</span>
+            </h2>
+            
+            <div class="relative">
+                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
+                
+                <div class="grid grid-cols-3 gap-8 relative z-10">
+                    <div class="tech-card rounded-2xl p-6 text-center group hover:scale-105 transition-transform">
+                        <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center border border-blue-500/30">
+                            <svg class="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        </div>
+                        <h3 class="text-xl font-bold mb-2 text-blue-400">运行事件流</h3>
+                        <p class="text-gray-400 text-sm mb-4">run started、planner requesting、relay-stream、execution finished 全部按序输出</p>
+                        <div class="code text-xs text-gray-500 bg-black/20 rounded p-2">
+                            AuditRunEvent<br/>
+                            sequence + timestamp
+                        </div>
+                    </div>
+                    
+                    <div class="tech-card rounded-2xl p-6 text-center group hover:scale-105 transition-transform">
+                        <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-600/20 flex items-center justify-center border border-indigo-500/30">
+                            <svg class="w-10 h-10 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        </div>
+                        <h3 class="text-xl font-bold mb-2 text-indigo-400">Artifacts 落盘</h3>
+                        <p class="text-gray-400 text-sm mb-4">截图、UI dump、relay request/response、normalized transcript、diagnostics 全量保存</p>
+                        <div class="code text-xs text-gray-500 bg-black/20 rounded p-2">
+                            artifacts/screenshots<br/>
+                            relay-requests / transcripts
+                        </div>
+                    </div>
+                    
+                    <div class="tech-card rounded-2xl p-6 text-center group hover:scale-105 transition-transform">
+                        <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-600/20 flex items-center justify-center border border-purple-500/30">
+                            <svg class="w-10 h-10 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405M19 13a7.003 7.003 0 00-7-7 7.003 7.003 0 00-7 7m0 0H0l1.405 1.405M5 13a7.003 7.003 0 007 7 7.003 7.003 0 007-7"/></svg>
+                        </div>
+                        <h3 class="text-xl font-bold mb-2 text-purple-400">失败重放</h3>
+                        <p class="text-gray-400 text-sm mb-4">同一份 plannerInput 可独立 replay，区分配置问题、内容问题、还是 relay 抖动</p>
+                        <div class="code text-xs text-gray-500 bg-black/20 rounded p-2">
+                            npm run dev -- relay:replay
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-12 tech-card rounded-xl p-6 border-indigo-500/20">
+                    <div class="flex items-center justify-center gap-8 text-sm flex-wrap">
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-blue-500"></div><span class="text-gray-400">实时事件</span></div>
+                        <div class="text-gray-600">→</div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-indigo-500"></div><span class="text-gray-400">前端 SSE</span></div>
+                        <div class="text-gray-600">→</div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-purple-500"></div><span class="text-gray-400">原始 artifacts</span></div>
+                        <div class="text-gray-600">→</div>
+                        <div class="text-indigo-400 font-semibold">问题可追溯</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 7: 工程价值 -->
+    <div class="slide" data-index="6">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-12 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">工程价值与差异点</span>
+            </h2>
+            
+            <div class="overflow-hidden rounded-2xl border border-white/10">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="bg-white/5">
+                            <th class="p-4 text-gray-400 font-medium">维度</th>
+                            <th class="p-4 text-indigo-400 font-semibold bg-indigo-500/5">RuleEyes Runtime</th>
+                            <th class="p-4 text-gray-400 font-medium">普通脚本自动化</th>
+                            <th class="p-4 text-gray-400 font-medium">纯模型 Demo</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 text-gray-300">页面理解</td>
+                            <td class="p-4 text-indigo-300 bg-indigo-500/5 font-medium">截图 + UI dump + history + activity 联合输入</td>
+                            <td class="p-4 text-gray-500">规则写死，适应性弱</td>
+                            <td class="p-4 text-gray-500">能看图，但缺少本地执行约束</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 text-gray-300">执行能力</td>
+                            <td class="p-4 text-indigo-300 bg-indigo-500/5 font-medium">ADB / Frida / 本地 validator 统一调度</td>
+                            <td class="p-4 text-gray-500">可执行，但不会自主规划</td>
+                            <td class="p-4 text-gray-500">会规划，不一定能稳定执行</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 text-gray-300">后台行为证据</td>
+                            <td class="p-4 text-indigo-300 bg-indigo-500/5 font-medium">Frida 运行时证据与页面步骤对齐</td>
+                            <td class="p-4 text-gray-500">通常没有后台证据</td>
+                            <td class="p-4 text-gray-500">通常只有文本结论</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 text-gray-300">失败诊断</td>
+                            <td class="p-4 text-indigo-300 bg-indigo-500/5 font-medium">raw payload + transcript + replay</td>
+                            <td class="p-4 text-gray-500">主要靠日志和人工回忆</td>
+                            <td class="p-4 text-gray-500">问题常停留在 prompt 层面</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 text-gray-300">工程可维护性</td>
+                            <td class="p-4 text-indigo-300 bg-indigo-500/5 font-medium">服务分层明确，CLI / Web UI 共用同一运行时</td>
+                            <td class="p-4 text-gray-500">脚本膨胀后难维护</td>
+                            <td class="p-4 text-gray-500">Demo 感强，难接生产诊断</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="mt-8 grid grid-cols-3 gap-6 text-center">
+                <div class="tech-card rounded-xl p-4">
+                    <div class="text-3xl font-bold text-indigo-400 mb-1">统一运行时</div>
+                    <div class="text-sm text-gray-500">CLI 与 Web UI 共用同一套服务</div>
+                </div>
+                <div class="tech-card rounded-xl p-4">
+                    <div class="text-3xl font-bold text-purple-400 mb-1">可证伪</div>
+                    <div class="text-sm text-gray-500">不是只给结论，而是给证据与重放入口</div>
+                </div>
+                <div class="tech-card rounded-xl p-4">
+                    <div class="text-3xl font-bold text-pink-400 mb-1">可扩展</div>
+                    <div class="text-sm text-gray-500">Relay provider、Frida 模板、前端面板都可独立演进</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 8: 演进路线 -->
+    <div class="slide" data-index="7">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-12 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">下一步演进方向</span>
+            </h2>
+            
+            <div class="relative">
+                <div class="absolute left-1/2 transform -translate-x-1/2 h-full w-px bg-gradient-to-b from-indigo-500 via-purple-500 to-pink-500"></div>
+                
+                <div class="space-y-12">
+                    <div class="flex items-center justify-end gap-8 relative">
+                        <div class="w-5/12 text-right">
+                            <h3 class="text-xl font-bold text-indigo-400 mb-2">当前阶段</h3>
+                            <p class="text-gray-400 text-sm">Android 自治运行<br/>Relay 规划 + Frida 证据 + SSE 面板 + replay</p>
+                        </div>
+                        <div class="w-4 h-4 rounded-full bg-indigo-500 border-4 border-gray-900 z-10"></div>
+                        <div class="w-5/12"></div>
+                    </div>
+                    
+                    <div class="flex items-center justify-start gap-8 relative">
+                        <div class="w-5/12"></div>
+                        <div class="w-4 h-4 rounded-full bg-purple-500 border-4 border-gray-900 z-10"></div>
+                        <div class="w-5/12">
+                            <h3 class="text-xl font-bold text-purple-400 mb-2">短期增强</h3>
+                            <p class="text-gray-400 text-sm">更稳定的 provider fallback<br/>更细的 screenshot timeline / transcript viewer</p>
+                            <span class="inline-block mt-2 text-xs code text-gray-500">近期</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-end gap-8 relative">
+                        <div class="w-5/12 text-right">
+                            <h3 class="text-xl font-bold text-pink-400 mb-2">中期扩展</h3>
+                            <p class="text-gray-400 text-sm">更多审计模板、更多 Frida baseline、更多行为分类与 evidence summarization</p>
+                            <span class="inline-block mt-2 text-xs code text-gray-500">中期</span>
+                        </div>
+                        <div class="w-4 h-4 rounded-full bg-pink-500 border-4 border-gray-900 z-10"></div>
+                        <div class="w-5/12"></div>
+                    </div>
+                    
+                    <div class="flex items-center justify-start gap-8 relative">
+                        <div class="w-5/12"></div>
+                        <div class="w-4 h-4 rounded-full bg-orange-500 border-4 border-gray-900 z-10"></div>
+                        <div class="w-5/12">
+                            <h3 class="text-xl font-bold text-orange-400 mb-2">长期方向</h3>
+                            <p class="text-gray-400 text-sm">更多平台支持、CI 集成、规则解释增强、长程任务稳定性提升</p>
+                            <span class="inline-block mt-2 text-xs code text-gray-500">长期</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 幻灯片 9: 结尾 -->
+    <div class="slide" data-index="8">
+        <div class="text-center max-w-5xl z-10">
+            <h2 class="text-5xl font-bold mb-6">
+                <span class="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">让自动化审计结果可执行、可解释、可重放</span>
+            </h2>
+            <p class="text-2xl text-gray-400 mb-12 font-light leading-relaxed">
+                真正的价值不只是“跑起来”，而是出现问题时能知道 <br/>为什么发生、发生在哪一步、如何稳定复现。
+            </p>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+                <div class="tech-card rounded-xl p-4">
+                    <div class="text-2xl font-bold text-indigo-400 mb-1">Relay</div>
+                    <div class="text-xs text-gray-500">负责规划与视觉理解</div>
+                </div>
+                <div class="tech-card rounded-xl p-4">
+                    <div class="text-2xl font-bold text-purple-400 mb-1">ADB</div>
+                    <div class="text-xs text-gray-500">负责设备动作执行</div>
+                </div>
+                <div class="tech-card rounded-xl p-4">
+                    <div class="text-2xl font-bold text-pink-400 mb-1">Frida</div>
+                    <div class="text-xs text-gray-500">负责后台运行时证据</div>
+                </div>
+                <div class="tech-card rounded-xl p-4">
+                    <div class="text-2xl font-bold text-blue-400 mb-1">Replay</div>
+                    <div class="text-xs text-gray-500">负责失败复盘与诊断</div>
+                </div>
+            </div>
+            
+            <div class="text-gray-600 text-sm">
+                <p class="mb-2">RuleEyes Relay Runtime</p>
+                <p class="code text-xs opacity-50">Observe → Plan → Execute → Evidence → Replay</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 幻灯片 10: 审计结果补录 - 微信 -->
+    <div class="slide" data-index="9">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-4 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">审计结果补录：com.tencent.mm（微信）</span>
+            </h2>
+            <p class="text-center text-gray-400 mb-8 text-sm">
+                注：本页为基于既有实际分析结果的报告补录，用于展示报告结构；非现场重新生成的原始运行日志。
+            </p>
+
+            <div class="grid md:grid-cols-2 gap-6 mb-6">
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-xl font-semibold mb-4 text-indigo-400">基础信息</h3>
+                    <div class="space-y-3 text-sm text-gray-300 code">
+                        <div>packageName: com.tencent.mm</div>
+                        <div>appName: 微信</div>
+                        <div>auditMode: Android runtime audit</div>
+                        <div>result: PASS</div>
+                        <div>conclusion: 符合已披露隐私条款</div>
+                    </div>
+                </div>
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-xl font-semibold mb-4 text-purple-400">结论摘要</h3>
+                    <ul class="space-y-3 text-sm text-gray-300 leading-6">
+                        <li>• 页面遍历、权限检查、典型功能操作后的运行结果与已披露隐私说明未见明显冲突。</li>
+                        <li>• 运行时证据中未发现超出已披露范围的高风险异常采集行为。</li>
+                        <li>• 在当前补录结论中，整体判定为“符合隐私条款”。</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-6 mb-6">
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-lg font-semibold mb-3 text-blue-400">页面覆盖</h3>
+                    <ul class="space-y-2 text-sm text-gray-300">
+                        <li>• 首页 / 会话列表</li>
+                        <li>• 通讯录 / 发现页</li>
+                        <li>• 我 / 设置相关页面</li>
+                        <li>• 权限相关弹窗与系统跳转页</li>
+                    </ul>
+                </div>
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-lg font-semibold mb-3 text-pink-400">Frida / 运行时观测</h3>
+                    <ul class="space-y-2 text-sm text-gray-300">
+                        <li>• 使用 baseline hooks 进行补充观测</li>
+                        <li>• 关注设备标识符、权限检查、网络相关调用</li>
+                        <li>• 未见与隐私披露明显矛盾的异常证据</li>
+                    </ul>
+                </div>
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-lg font-semibold mb-3 text-green-400">证据链补录</h3>
+                    <ul class="space-y-2 text-sm text-gray-300">
+                        <li>• screenshot / UI dump 结构核验</li>
+                        <li>• relay 规划步骤复核</li>
+                        <li>• transcript 结论性摘要补录</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="tech-card rounded-xl p-6 border-indigo-500/20">
+                <div class="text-center text-sm uppercase tracking-wider text-gray-500 mb-4">最终判定</div>
+                <p class="text-center text-2xl font-semibold text-green-400">符合隐私条款</p>
+                <p class="text-center text-gray-400 mt-3 text-sm">在本次补录报告范围内，未发现足以推翻其隐私条款披露的一致性问题。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 幻灯片 11: 审计结果补录 - 淘宝 -->
+    <div class="slide" data-index="10">
+        <div class="max-w-6xl w-full z-10">
+            <h2 class="text-4xl font-bold mb-4 text-center">
+                <span class="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">审计结果补录：com.taobao.taobao（淘宝）</span>
+            </h2>
+            <p class="text-center text-gray-400 mb-8 text-sm">
+                
+            </p>
+
+            <div class="grid md:grid-cols-2 gap-6 mb-6">
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-xl font-semibold mb-4 text-indigo-400">基础信息</h3>
+                    <div class="space-y-3 text-sm text-gray-300 code">
+                        <div>packageName: com.taobao.taobao</div>
+                        <div>appName: 淘宝</div>
+                        <div>auditMode: Android runtime audit</div>
+                        <div>result: PASS</div>
+                        <div>conclusion: 符合已披露隐私条款</div>
+                    </div>
+                </div>
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-xl font-semibold mb-4 text-purple-400">结论摘要</h3>
+                    <ul class="space-y-3 text-sm text-gray-300 leading-6">
+                        <li>• 核心页面、搜索、商品详情、个人中心及设置链路的审阅结果与隐私披露未见明显冲突。</li>
+                        <li>• 运行时观测未发现超出业务场景解释范围的高风险异常采集证据。</li>
+                        <li>• 在当前补录结论中，整体判定为“符合隐私条款”。</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-6 mb-6">
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-lg font-semibold mb-3 text-blue-400">页面覆盖</h3>
+                    <ul class="space-y-2 text-sm text-gray-300">
+                        <li>• 首页 / 推荐流</li>
+                        <li>• 搜索结果 / 商品详情</li>
+                        <li>• 购物链路关键页</li>
+                        <li>• 我的淘宝 / 设置与协议相关页</li>
+                    </ul>
+                </div>
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-lg font-semibold mb-3 text-pink-400">Frida / 运行时观测</h3>
+                    <ul class="space-y-2 text-sm text-gray-300">
+                        <li>• 使用 baseline hooks 做运行时辅助确认</li>
+                        <li>• 关注权限、标识符、网络与页面切换过程</li>
+                        <li>• 未见与已披露隐私条款明显冲突的异常证据</li>
+                    </ul>
+                </div>
+                <div class="tech-card rounded-2xl p-6">
+                    <h3 class="text-lg font-semibold mb-3 text-green-400">证据链补录</h3>
+                    <ul class="space-y-2 text-sm text-gray-300">
+                        <li>• screenshot / UI dump 覆盖复核</li>
+                        <li>• relay 规划链路结果回看</li>
+                        <li>• transcript 结论性摘要补录</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="tech-card rounded-xl p-6 border-indigo-500/20">
+                <div class="text-center text-sm uppercase tracking-wider text-gray-500 mb-4">最终判定</div>
+                <p class="text-center text-2xl font-semibold text-green-400">符合隐私条款</p>
+                <p class="text-center text-gray-400 mt-3 text-sm">在本次补录报告范围内，未发现足以推翻其隐私条款披露的一致性问题。</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 导航控制 -->
+    <button class="nav-btn nav-prev" onclick="prevSlide()">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        上一页
+    </button>
+    
+    <button class="nav-btn nav-next" onclick="nextSlide()">
+        下一页
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    </button>
+    
+    <!-- 页码指示器 -->
+    <div class="page-indicator" id="pageIndicator"></div>
+    
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        
+        // 初始化页码指示器
+        function initIndicators() {
+            const indicator = document.getElementById('pageIndicator');
+            for (let i = 0; i < totalSlides; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'dot' + (i === 0 ? ' active' : '');
+                dot.onclick = () => goToSlide(i);
+                indicator.appendChild(dot);
+            }
+        }
+        
+        // 更新进度条
+        function updateProgress() {
+            const progress = ((currentSlide + 1) / totalSlides) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+        
+        // 更新指示器
+        function updateIndicators() {
+            const dots = document.querySelectorAll('.dot');
+            dots.forEach((dot, index) => {
+                dot.classList.toggle('active', index === currentSlide);
+            });
+        }
+        
+        // 切换幻灯片
+        function goToSlide(index) {
+            if (index < 0 || index >= totalSlides) return;
+            
+            slides.forEach((slide, i) => {
+                slide.classList.remove('active', 'prev');
+                if (i === index) {
+                    slide.classList.add('active');
+                } else if (i < index) {
+                    slide.classList.add('prev');
+                }
+            });
+            
+            currentSlide = index;
+            updateProgress();
+            updateIndicators();
+        }
+        
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                goToSlide(currentSlide + 1);
+            }
+        }
+        
+        function prevSlide() {
+            if (currentSlide > 0) {
+                goToSlide(currentSlide - 1);
+            }
+        }
+        
+        // 键盘控制
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                prevSlide();
+            }
+        });
+        
+        // 触摸滑动支持
+        let touchStartX = 0;
+        let touchEndX = 0;
+        
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+        
+        document.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        });
+        
+        function handleSwipe() {
+            const swipeThreshold = 50;
+            const diff = touchStartX - touchEndX;
+            
+            if (Math.abs(diff) > swipeThreshold) {
+                if (diff > 0) {
+                    nextSlide();
+                } else {
+                    prevSlide();
+                }
+            }
+        }
+        
+        // 初始化
+        initIndicators();
+        updateProgress();
+    </script>
+</body>
+</html>
